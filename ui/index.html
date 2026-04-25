@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ASL Translator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0a0a0a; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+  .container { max-width: 720px; width: 100%; }
+  h1 { font-size: 1.5rem; font-weight: 500; margin-bottom: 1.5rem; text-align: center; }
+  .video-wrap { position: relative; aspect-ratio: 4/3; background: #1a1a1a; border-radius: 12px; overflow: hidden; margin-bottom: 1rem; }
+  video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  canvas { display: none; }
+  .overlay { position: absolute; top: 1rem; left: 1rem; right: 1rem; padding: 1rem; background: rgba(0,0,0,0.7); border-radius: 8px; backdrop-filter: blur(8px); }
+  .label { font-size: 2rem; font-weight: 500; margin-bottom: 0.25rem; }
+  .meta { font-size: 0.875rem; color: #888; display: flex; gap: 1rem; }
+  .meta span { display: inline-block; }
+  .controls { display: flex; gap: 0.75rem; justify-content: center; }
+  button { background: #fff; color: #000; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: opacity 0.2s; }
+  button:hover { opacity: 0.85; }
+  button.secondary { background: #2a2a2a; color: #fff; }
+  .status { margin-top: 1rem; font-size: 0.75rem; color: #666; text-align: center; }
+  .status.connected { color: #4ade80; }
+  .status.error { color: #f87171; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Real-Time ASL Translator</h1>
+    <div class="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas"></canvas>
+      <div class="overlay">
+        <div class="label" id="label">—</div>
+        <div class="meta">
+          <span id="confidence">conf: —</span>
+          <span id="mode">mode: —</span>
+          <span id="latency">— ms</span>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <button id="start">Start</button>
+      <button id="reset" class="secondary">Reset buffer</button>
+    </div>
+    <div class="status" id="status">Disconnected</div>
+  </div>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const labelEl = document.getElementById("label");
+const confEl = document.getElementById("confidence");
+const modeEl = document.getElementById("mode");
+const latencyEl = document.getElementById("latency");
+const statusEl = document.getElementById("status");
+
+let ws = null;
+let running = false;
+const FPS = 15;
+const FRAME_WIDTH = 320;
+
+async function start() {
+  if (running) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    video.srcObject = stream;
+    await video.play();
+  } catch (e) {
+    statusEl.textContent = "Camera access denied";
+    statusEl.className = "status error";
+    return;
+  }
+
+  ws = new WebSocket(`ws://${location.host}/ws/translate`);
+  ws.onopen = () => {
+    statusEl.textContent = "Connected";
+    statusEl.className = "status connected";
+    running = true;
+    pumpFrames();
+  };
+  ws.onmessage = (e) => {
+    const r = JSON.parse(e.data);
+    if (r.error) return;
+    if (r.label) {
+      labelEl.textContent = r.label.toUpperCase();
+      confEl.textContent = `conf: ${r.confidence.toFixed(2)}`;
+      modeEl.textContent = `mode: ${r.mode}`;
+      latencyEl.textContent = `${r.latency_ms.toFixed(0)} ms`;
+    } else {
+      labelEl.textContent = "—";
+    }
+  };
+  ws.onclose = () => {
+    statusEl.textContent = "Disconnected";
+    statusEl.className = "status";
+    running = false;
+  };
+}
+
+function pumpFrames() {
+  if (!running || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+  const aspect = video.videoHeight / video.videoWidth;
+  canvas.width = FRAME_WIDTH;
+  canvas.height = Math.round(FRAME_WIDTH * aspect);
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+  ws.send(JSON.stringify({ frame: dataUrl }));
+
+  setTimeout(pumpFrames, 1000 / FPS);
+}
+
+document.getElementById("start").addEventListener("click", start);
+document.getElementById("reset").addEventListener("click", async () => {
+  await fetch("/reset", { method: "POST" });
+  labelEl.textContent = "—";
+});
+</script>
+</body>
+</html>

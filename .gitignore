@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+checkpoints/
+landmarks_data/
+KaggleASL/
+*.onnx
+*.pt
+node_modules/
