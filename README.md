@@ -40,11 +40,3 @@ python -m inference.webcam_demo
 uvicorn api.server:app --reload
 cd ui && npm run dev
 ```
-
-## Resume highlights
-
-- Custom Transformer architecture for temporal landmark sequences
-- Hybrid static/dynamic routing for letters + words
-- Sub-100ms end-to-end latency including hand tracking
-- ONNX export for edge deployment
-- WebSocket streaming for browser inference
